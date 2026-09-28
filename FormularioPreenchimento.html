@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --verde: #274e13;
+      --verde-claro: #e6f0e0;
+      --alerta: #b45309;
+      --erro: #b91c1c;
+      --azul: #1d4ed8;
+      --borda: #d8dee2;
+      --texto: #1f2a1c;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: var(--texto); background: #fafafa; }
+    header { background: var(--verde); color: #fff; padding: 14px 18px; }
+    header h1 { margin: 0; font-size: 17px; }
+    header p { margin: 4px 0 0; font-size: 12px; opacity: .85; }
+    .tabs { display: flex; background: #fff; border-bottom: 1px solid var(--borda); }
+    .tab-btn { flex: 1; padding: 12px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: bold; color: #666; border-bottom: 3px solid transparent; }
+    .tab-btn.ativo { color: var(--verde); border-bottom-color: var(--verde); }
+    .conteudo { padding: 14px; }
+    .painel { display: none; }
+    .painel.ativo { display: block; }
+    .barra-topo { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    input[type=text], input[type=search], input[type=file], select {
+      padding: 8px; border: 1px solid var(--borda); border-radius: 6px; font-size: 13px;
+    }
+    #busca-cadastro, #busca-mensal { flex: 1; min-width: 180px; }
+    .progresso { font-size: 12px; color: #555; margin-left: auto; }
+    button.acao {
+      background: var(--verde); color: #fff; border: none; border-radius: 6px;
+      padding: 8px 14px; font-size: 13px; cursor: pointer;
+    }
+    button.acao:hover { opacity: .9; }
+    button.acao:disabled { background: #aaa; cursor: not-allowed; }
+    button.linha {
+      background: #fff; color: var(--verde); border: 1px solid var(--verde); border-radius: 6px;
+      padding: 5px 10px; font-size: 12px; cursor: pointer;
+    }
+    button.linha:disabled { color: #aaa; border-color: #ccc; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; background: #fff; font-size: 13px; }
+    th, td { border-bottom: 1px solid var(--borda); padding: 7px 8px; text-align: left; }
+    th { background: #f2f4f0; position: sticky; top: 0; }
+    tbody tr:hover { background: #fbfdf9; }
+    td input[type=number], td input[type=date], td input[type=text] {
+      width: 100%; padding: 6px; border: 1px solid var(--borda); border-radius: 4px; font-size: 13px;
+    }
+    .tabela-scroll { max-height: 55vh; overflow-y: auto; border: 1px solid var(--borda); border-radius: 6px; }
+    .status { font-size: 15px; text-align: center; }
+    .status.ok { color: #15803d; }
+    .status.pendente { color: var(--alerta); }
+    .status.suja { color: var(--azul); }
+    #toast {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: #1f2a1c; color: #fff; padding: 10px 18px; border-radius: 6px;
+      font-size: 13px; display: none; z-index: 10; max-width: 90vw;
+    }
+    #toast.erro { background: var(--erro); }
+    .carregando { text-align: center; padding: 30px; color: #777; font-size: 13px; }
+
+    /* Sincronização */
+    .grade-botoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .cartao-acao { background: #fff; border: 1px solid var(--borda); border-radius: 8px; padding: 12px; }
+    .cartao-acao p { margin: 4px 0 10px; font-size: 12px; color: #666; }
+    .log-painel {
+      background: #10220a; color: #d9f2cc; font-family: Consolas, monospace; font-size: 12px;
+      border-radius: 8px; padding: 10px; height: 220px; overflow-y: auto;
+    }
+    .log-painel .linha-log { border-bottom: 1px dashed #2a4a1c; padding: 4px 0; }
+    .log-painel .linha-log.erro-log { color: #ff9b9b; }
+
+    /* Importação */
+    .caixa-importar { background: #fff; border: 1px dashed var(--verde); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .caixa-importar h3 { margin: 0 0 8px; font-size: 13px; }
+    .linha-campos { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .linha-campos label { font-size: 12px; color: #444; }
+    .resumo-import { font-size: 12px; background: var(--verde-claro); border-radius: 6px; padding: 8px 10px; margin: 8px 0; display: none; }
+    .resumo-import.erro { background: #fdecea; }
+    .aviso-armazenamento {
+      font-size: 11.5px; color: #555; background: #f2f4f0; border-left: 3px solid var(--verde);
+      padding: 8px 10px; margin-top: 14px; border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Monitor de Honorários — Preenchimento</h1>
+    <p>Cadastro, movimento mensal, importação de arquivos e sincronizações</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn ativo" data-aba="cadastro" onclick="trocarAba('cadastro')">📋 Cadastro</button>
+    <button class="tab-btn" data-aba="mensal" onclick="trocarAba('mensal')">📆 Movimento mensal</button>
+    <button class="tab-btn" data-aba="sincronizacao" onclick="trocarAba('sincronizacao')">⚙️ Sincronização</button>
+  </div>
+
+  <div class="conteudo">
+
+    <!-- ABA CADASTRO -->
+    <div class="painel ativo" id="painel-cadastro">
+      <div class="barra-topo">
+        <input type="search" id="busca-cadastro" placeholder="Buscar empresa ou CNPJ..." oninput="filtrarCadastro()">
+        <span class="progresso" id="progresso-cadastro">carregando...</span>
+      </div>
+      <div class="tabela-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:26px"></th>
+              <th>Empresa</th>
+              <th>Honorário Atual (R$)</th>
+              <th>Data Último Reajuste</th>
+              <th>Motivo Última Alteração</th>
+              <th>Honorário Sugerido (R$)</th>
+              <th style="width:70px"></th>
+            </tr>
+          </thead>
+          <tbody id="tbody-cadastro">
+            <tr><td colspan="7" class="carregando">Carregando empresas...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="aviso-armazenamento">
+        ℹ️ Nada aqui fica guardado nesta tela. Cada linha só é gravada na planilha quando você clica em
+        "Salvar" — antes disso, se fechar a aba do navegador, a informação digitada se perde.
+      </div>
+    </div>
+
+    <!-- ABA MENSAL -->
+    <div class="painel" id="painel-mensal">
+
+      <div class="caixa-importar">
+        <h3>📥 Importar de arquivo (relatório de Funcionários do Domínio ou de Notas do Nota Focus)</h3>
+        <div class="linha-campos">
+          <label>O que este arquivo traz:</label>
+          <select id="import-tipo">
+            <option value="funcionarios">Quantidade de Funcionários</option>
+            <option value="notas">Quantidade de Notas Emitidas</option>
+          </select>
+          <label>Identificar empresa pelo:</label>
+          <select id="import-modo-id">
+            <option value="codigo">Código Domínio</option>
+            <option value="cnpj">CNPJ</option>
+          </select>
+          <input type="file" id="arquivo-import" accept=".csv,.xlsx,.xls">
+        </div>
+        <div class="linha-campos" id="mapeamento-colunas" style="display:none">
+          <label>Coluna com o identificador:</label>
+          <select id="col-identificador"></select>
+          <label>Coluna com a quantidade:</label>
+          <select id="col-quantidade"></select>
+          <button class="linha" onclick="previsualizarImportacao()">Pré-visualizar</button>
+        </div>
+        <div class="resumo-import" id="resumo-import"></div>
+        <button class="acao" id="btn-aplicar-import" onclick="aplicarImportacaoNaGrade()" disabled>Aplicar à grade do mês</button>
+      </div>
+
+      <div class="barra-topo">
+        <label style="font-size:13px">Competência:</label>
+        <select id="select-competencia" onchange="onMudaCompetencia()"></select>
+        <input type="text" id="nova-competencia" placeholder="Nova: MM / AAAA" style="width:120px">
+        <button class="linha" onclick="usarNovaCompetencia()">+ usar</button>
+        <input type="search" id="busca-mensal" placeholder="Buscar empresa ou CNPJ..." oninput="filtrarMensal()">
+        <span class="progresso" id="progresso-mensal">selecione uma competência</span>
+      </div>
+      <div class="tabela-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:26px"></th>
+              <th>Empresa</th>
+              <th style="width:160px">Qtd. Funcionários</th>
+              <th style="width:160px">Notas Emitidas</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-mensal">
+            <tr><td colspan="4" class="carregando">Escolha uma competência acima.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px; text-align:right;">
+        <button class="acao" id="btn-salvar-mensal" onclick="salvarTudoMensal()" disabled>Salvar todas as alterações</button>
+      </div>
+      <div class="aviso-armazenamento">
+        ℹ️ Importar um arquivo só preenche os campos NESTA TELA — nada é gravado na planilha até você
+        clicar em "Salvar todas as alterações". O arquivo em si nunca é enviado a lugar nenhum: ele é lido
+        pelo seu próprio navegador e descartado assim que a tela é preenchida.
+      </div>
+    </div>
+
+    <!-- ABA SINCRONIZAÇÃO -->
+    <div class="painel" id="painel-sincronizacao">
+      <div class="grade-botoes">
+        <div class="cartao-acao">
+          <strong>🔄 Sincronizar Empresas</strong>
+          <p>Traz cadastro novo/atualizado do Tabelão para a aba EMPRESAS.</p>
+          <button class="acao" onclick="executarAcao('sincronizarEmpresasTabelao', this)">Rodar</button>
+        </div>
+        <div class="cartao-acao">
+          <strong>💰 Sincronizar Faturamento</strong>
+          <p>Traz o faturamento mensal do Faturamento_DB para o histórico.</p>
+          <button class="acao" onclick="executarAcao('sincronizarFaturamentoMensal', this)">Rodar</button>
+        </div>
+        <div class="cartao-acao">
+          <strong>📐 Criar/Atualizar Abas Auxiliares</strong>
+          <p>Garante que CONFIG_REGRAS, GATILHOS_ALERTAS e TRATATIVAS existem.</p>
+          <button class="acao" onclick="executarAcao('criarAbasAuxiliares', this)">Rodar</button>
+        </div>
+        <div class="cartao-acao">
+          <strong>🎯 Calcular Score/Gatilhos</strong>
+          <p>Recalcula a nota de prioridade de cada empresa a partir do histórico.</p>
+          <button class="acao" onclick="executarAcao('calcularScoreEGatilhos', this)">Rodar</button>
+        </div>
+        <div class="cartao-acao">
+          <strong>📣 Enviar Alertas (Score)</strong>
+          <p>Manda pro Slack/e-mail os alertas novos com score acima do mínimo.</p>
+          <button class="acao" onclick="executarAcao('enviarAlertasScore', this)">Rodar</button>
+        </div>
+        <div class="cartao-acao">
+          <strong>📣 Enviar Alertas (regra antiga, 20%)</strong>
+          <p>Regra original: só faturamento subindo 20% ou mais.</p>
+          <button class="acao" onclick="executarAcao('enviarAlertasGatilhos', this)">Rodar</button>
+        </div>
+      </div>
+      <div class="log-painel" id="log-sincronizacao">
+        <div class="linha-log">Pronto. Clique em "Rodar" em qualquer cartão acima para ver o resultado aqui.</div>
+      </div>
+      <div class="aviso-armazenamento">
+        ⚠️ Esses botões chamam exatamente as mesmas funções do menu "⚙️ Base de Honorários" dentro do
+        Sheets — só que a partir desta tela. Sincronizações grandes (25 mil+ linhas de faturamento) podem
+        levar alguns minutos; não fecha a aba enquanto o botão estiver escrito "Rodando...".
+      </div>
+    </div>
+
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    var empresasCadastro = [];
+    var empresasMensal = [];
+    var competenciaAtual = '';
+    var linhasSujasMensal = {}; // cnpj (índice) -> true, enquanto não salvo
+    var mapaIdentificadores = null; // carregado sob demanda p/ importação
+    var arquivoImportadoLinhas = null; // matriz bruta do arquivo escolhido
+    var resultadoImportacao = null; // { matches: [...], naoEncontrados: [...], foraDaGrade: [...] }
+
+    // ---------- utilitários ----------
+    function mostrarToast(msg, ehErro) {
+      var t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = ehErro ? 'erro' : '';
+      t.style.display = 'block';
+      setTimeout(function() { t.style.display = 'none'; }, 3600);
+    }
+    function trocarAba(nome) {
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.toggle('ativo', b.dataset.aba === nome); });
+      document.querySelectorAll('.painel').forEach(function(p) { p.classList.remove('ativo'); });
+      document.getElementById('painel-' + nome).classList.add('ativo');
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+    function limparDigitos(v) { return String(v == null ? '' : v).replace(/[^\d]/g, ''); }
+
+    // ---------- ABA CADASTRO ----------
+    function carregarCadastro() {
+      google.script.run.withSuccessHandler(function(lista) {
+        empresasCadastro = lista;
+        renderCadastro(empresasCadastro);
+      }).withFailureHandler(function(erro) {
+        mostrarToast('Erro ao carregar empresas: ' + erro.message, true);
+      }).listarEmpresasParaFormulario();
+    }
+
+    function renderCadastro(lista) {
+      var tbody = document.getElementById('tbody-cadastro');
+      if (lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="carregando">Nenhuma empresa encontrada.</td></tr>';
+      } else {
+        tbody.innerHTML = lista.map(function(emp, i) {
+          var preenchido = emp.honorarioAtual !== '' && emp.dataUltimoReajuste !== '';
+          return '<tr data-cnpj="' + escapeHtml(emp.cnpj) + '">' +
+            '<td class="status ' + (preenchido ? 'ok' : 'pendente') + '" id="status-cad-' + i + '">' + (preenchido ? '✅' : '⚠️') + '</td>' +
+            '<td>' + escapeHtml(emp.empresa) + '<br><small style="color:#888">' + escapeHtml(emp.cnpj) + '</small></td>' +
+            '<td><input type="number" step="0.01" value="' + escapeHtml(emp.honorarioAtual) + '" id="hon-' + i + '"></td>' +
+            '<td><input type="date" value="' + escapeHtml(emp.dataUltimoReajuste) + '" id="dt-' + i + '"></td>' +
+            '<td><input type="text" value="' + escapeHtml(emp.motivoUltimaAlteracao) + '" id="mot-' + i + '"></td>' +
+            '<td><input type="number" step="0.01" value="' + escapeHtml(emp.honorarioSugerido) + '" id="sug-' + i + '"></td>' +
+            '<td><button class="linha" onclick="salvarCadastroLinha(' + i + ')">Salvar</button></td>' +
+          '</tr>';
+        }).join('');
+      }
+      atualizarProgressoCadastro();
+    }
+
+    function atualizarProgressoCadastro() {
+      var total = empresasCadastro.length;
+      var feitos = empresasCadastro.filter(function(e) { return e.honorarioAtual !== '' && e.dataUltimoReajuste !== ''; }).length;
+      document.getElementById('progresso-cadastro').textContent = feitos + ' de ' + total + ' empresas com cadastro completo';
+    }
+
+    function filtrarCadastro() {
+      var termo = document.getElementById('busca-cadastro').value.toLowerCase();
+      renderCadastro(empresasCadastro.filter(function(e) {
+        return (e.empresa || '').toLowerCase().indexOf(termo) !== -1 || (e.cnpj || '').indexOf(termo) !== -1;
+      }));
+    }
+
+    function salvarCadastroLinha(i) {
+      var emp = empresasCadastro[i];
+      var dados = {
+        cnpj: emp.cnpj,
+        honorarioAtual: document.getElementById('hon-' + i).value,
+        dataUltimoReajuste: document.getElementById('dt-' + i).value,
+        motivoUltimaAlteracao: document.getElementById('mot-' + i).value,
+        honorarioSugerido: document.getElementById('sug-' + i).value
+      };
+      google.script.run.withSuccessHandler(function(resp) {
+        if (resp.ok) {
+          emp.honorarioAtual = dados.honorarioAtual;
+          emp.dataUltimoReajuste = dados.dataUltimoReajuste;
+          emp.motivoUltimaAlteracao = dados.motivoUltimaAlteracao;
+          emp.honorarioSugerido = dados.honorarioSugerido;
+          document.getElementById('status-cad-' + i).outerHTML =
+            '<td class="status ok" id="status-cad-' + i + '">✅</td>';
+          atualizarProgressoCadastro();
+          mostrarToast('Salvo: ' + emp.empresa);
+        } else {
+          mostrarToast('Não salvou: ' + resp.erro, true);
+        }
+      }).withFailureHandler(function(erro) {
+        mostrarToast('Erro ao salvar: ' + erro.message, true);
+      }).salvarCadastroEmpresa(dados);
+    }
+
+    // ---------- ABA MENSAL ----------
+    function carregarCompetencias() {
+      google.script.run.withSuccessHandler(function(lista) {
+        var select = document.getElementById('select-competencia');
+        select.innerHTML = '<option value="">— selecione —</option>' +
+          lista.map(function(c) { return '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>'; }).join('');
+      }).withFailureHandler(function(erro) {
+        mostrarToast('Erro ao carregar competências: ' + erro.message, true);
+      }).obterCompetenciasHistorico();
+    }
+
+    function usarNovaCompetencia() {
+      var valor = document.getElementById('nova-competencia').value.trim();
+      if (!/^\d{2}\s*\/\s*\d{4}$/.test(valor)) {
+        mostrarToast('Use o formato MM / AAAA, ex: 09 / 2026', true);
+        return;
+      }
+      var select = document.getElementById('select-competencia');
+      var opt = document.createElement('option');
+      opt.value = valor; opt.textContent = valor + ' (nova)';
+      select.appendChild(opt);
+      select.value = valor;
+      onMudaCompetencia();
+    }
+
+    function onMudaCompetencia() {
+      competenciaAtual = document.getElementById('select-competencia').value;
+      linhasSujasMensal = {};
+      resultadoImportacao = null;
+      document.getElementById('btn-salvar-mensal').disabled = true;
+      document.getElementById('btn-aplicar-import').disabled = true;
+      document.getElementById('resumo-import').style.display = 'none';
+      if (!competenciaAtual) {
+        document.getElementById('tbody-mensal').innerHTML = '<tr><td colspan="4" class="carregando">Escolha uma competência acima.</td></tr>';
+        document.getElementById('progresso-mensal').textContent = 'selecione uma competência';
+        return;
+      }
+      document.getElementById('tbody-mensal').innerHTML = '<tr><td colspan="4" class="carregando">Carregando...</td></tr>';
+      google.script.run.withSuccessHandler(function(lista) {
+        empresasMensal = lista;
+        renderMensal(empresasMensal);
+      }).withFailureHandler(function(erro) {
+        mostrarToast('Erro ao carregar dados do mês: ' + erro.message, true);
+      }).obterDadosMensais(competenciaAtual);
+    }
+
+    function renderMensal(lista) {
+      var tbody = document.getElementById('tbody-mensal');
+      if (lista.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="carregando">Nenhuma empresa encontrada.</td></tr>';
+      } else {
+        tbody.innerHTML = lista.map(function(emp, i) {
+          var preenchido = emp.qtdFuncionarios !== '' && emp.notaEmitida !== '';
+          return '<tr data-cnpj="' + escapeHtml(emp.cnpj) + '">' +
+            '<td class="status ' + (preenchido ? 'ok' : 'pendente') + '" id="status-mes-' + i + '">' + (preenchido ? '✅' : '⚠️') + '</td>' +
+            '<td>' + escapeHtml(emp.empresa) + '<br><small style="color:#888">' + escapeHtml(emp.cnpj) + '</small></td>' +
+            '<td><input type="number" min="0" value="' + escapeHtml(emp.qtdFuncionarios) + '" id="func-' + i + '" onchange="marcarSuja(' + i + ')"></td>' +
+            '<td><input type="number" min="0" value="' + escapeHtml(emp.notaEmitida) + '" id="nota-' + i + '" onchange="marcarSuja(' + i + ')"></td>' +
+          '</tr>';
+        }).join('');
+      }
+      atualizarProgressoMensal();
+    }
+
+    function marcarSuja(i) {
+      linhasSujasMensal[i] = true;
+      var el = document.getElementById('status-mes-' + i);
+      el.className = 'status suja';
+      el.textContent = '✏️';
+      document.getElementById('btn-salvar-mensal').disabled = false;
+    }
+
+    function atualizarProgressoMensal() {
+      var total = empresasMensal.length;
+      var feitos = empresasMensal.filter(function(e) { return e.qtdFuncionarios !== '' && e.notaEmitida !== ''; }).length;
+      document.getElementById('progresso-mensal').textContent = feitos + ' de ' + total + ' empresas preenchidas em ' + competenciaAtual;
+    }
+
+    function filtrarMensal() {
+      var termo = document.getElementById('busca-mensal').value.toLowerCase();
+      var linhas = document.querySelectorAll('#tbody-mensal tr');
+      linhas.forEach(function(tr) {
+        var texto = tr.textContent.toLowerCase();
+        tr.style.display = texto.indexOf(termo) === -1 ? 'none' : '';
+      });
+    }
+
+    function salvarTudoMensal() {
+      var indices = Object.keys(linhasSujasMensal);
+      if (indices.length === 0) return;
+      var payload = indices.map(function(i) {
+        var emp = empresasMensal[i];
+        return {
+          cnpj: emp.cnpj,
+          qtdFuncionarios: document.getElementById('func-' + i).value,
+          notaEmitida: document.getElementById('nota-' + i).value
+        };
+      });
+      var btn = document.getElementById('btn-salvar-mensal');
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      google.script.run.withSuccessHandler(function(resp) {
+        indices.forEach(function(i) {
+          empresasMensal[i].qtdFuncionarios = document.getElementById('func-' + i).value;
+          empresasMensal[i].notaEmitida = document.getElementById('nota-' + i).value;
+          var el = document.getElementById('status-mes-' + i);
+          el.className = 'status ok'; el.textContent = '✅';
+        });
+        linhasSujasMensal = {};
+        atualizarProgressoMensal();
+        btn.textContent = 'Salvar todas as alterações';
+        mostrarToast('Salvo: ' + resp.atualizados + ' atualizadas, ' + resp.criados + ' novas.');
+      }).withFailureHandler(function(erro) {
+        btn.disabled = false;
+        btn.textContent = 'Salvar todas as alterações';
+        mostrarToast('Erro ao salvar: ' + erro.message, true);
+      }).salvarDadosMensais(competenciaAtual, payload);
+    }
+
+    // ---------- IMPORTAÇÃO DE ARQUIVO (Domínio / Nota Focus) ----------
+    document.getElementById('arquivo-import').addEventListener('change', function(e) {
+      var arquivo = e.target.files[0];
+      if (!arquivo) return;
+      var leitor = new FileReader();
+      leitor.onload = function(ev) {
+        try {
+          var dados = new Uint8Array(ev.target.result);
+          var wb = XLSX.read(dados, { type: 'array' });
+          var primeiraAba = wb.Sheets[wb.SheetNames[0]];
+          var linhas = XLSX.utils.sheet_to_json(primeiraAba, { header: 1, raw: true, defval: '' });
+          if (linhas.length < 2) { mostrarToast('Arquivo vazio ou sem linhas de dados.', true); return; }
+          arquivoImportadoLinhas = linhas;
+          montarSelecaoColunas(linhas[0]);
+        } catch (erro) {
+          mostrarToast('Não consegui ler esse arquivo: ' + erro.message, true);
+        }
+      };
+      leitor.readAsArrayBuffer(arquivo);
+    });
+
+    function montarSelecaoColunas(headerRow) {
+      var opcoes = headerRow.map(function(nome, i) {
+        return '<option value="' + i + '">' + escapeHtml(nome || ('Coluna ' + (i + 1))) + '</option>';
+      }).join('');
+      document.getElementById('col-identificador').innerHTML = opcoes;
+      document.getElementById('col-quantidade').innerHTML = opcoes;
+      document.getElementById('mapeamento-colunas').style.display = 'flex';
+      document.getElementById('resumo-import').style.display = 'none';
+      document.getElementById('btn-aplicar-import').disabled = true;
+    }
+
+    function garantirMapaIdentificadores(callback) {
+      if (mapaIdentificadores) { callback(); return; }
+      google.script.run.withSuccessHandler(function(lista) {
+        mapaIdentificadores = { porCodigo: {}, porCnpj: {} };
+        lista.forEach(function(e) {
+          if (e.codigoDominio) mapaIdentificadores.porCodigo[e.codigoDominio] = e.cnpj;
+          mapaIdentificadores.porCnpj[limparDigitos(e.cnpj)] = e.cnpj;
+        });
+        callback();
+      }).withFailureHandler(function(erro) {
+        mostrarToast('Erro ao carregar cadastro para casar com o arquivo: ' + erro.message, true);
+      }).obterMapaIdentificadores();
+    }
+
+    function previsualizarImportacao() {
+      if (!arquivoImportadoLinhas) return;
+      if (!competenciaAtual) { mostrarToast('Escolha a competência antes de importar.', true); return; }
+      garantirMapaIdentificadores(function() {
+        var idxId = Number(document.getElementById('col-identificador').value);
+        var idxQtd = Number(document.getElementById('col-quantidade').value);
+        var modo = document.getElementById('import-modo-id').value; // codigo | cnpj
+        var mapaCnpjParaIndiceGrade = {};
+        empresasMensal.forEach(function(e, i) { mapaCnpjParaIndiceGrade[limparDigitos(e.cnpj)] = i; });
+
+        var matches = [], naoEncontrados = [], foraDaGrade = [], invalidos = [];
+        for (var l = 1; l < arquivoImportadoLinhas.length; l++) {
+          var linha = arquivoImportadoLinhas[l];
+          if (!linha || linha.length === 0) continue;
+          var idBruto = String(linha[idxId] == null ? '' : linha[idxId]).trim();
+          if (!idBruto) continue;
+          var qtdBruta = linha[idxQtd];
+          var qtd = Number(qtdBruta);
+          if (qtdBruta === '' || isNaN(qtd) || qtd < 0) { invalidos.push(idBruto); continue; }
+
+          var cnpjEncontrado = (modo === 'codigo')
+            ? mapaIdentificadores.porCodigo[idBruto.replace(/\.0$/, '')]
+            : mapaIdentificadores.porCnpj[limparDigitos(idBruto)];
+
+          if (!cnpjEncontrado) { naoEncontrados.push(idBruto); continue; }
+          var indiceGrade = mapaCnpjParaIndiceGrade[limparDigitos(cnpjEncontrado)];
+          if (indiceGrade === undefined) { foraDaGrade.push(idBruto); continue; }
+          matches.push({ indiceGrade: indiceGrade, valor: Math.round(qtd) });
+        }
+
+        resultadoImportacao = matches;
+        var resumo = document.getElementById('resumo-import');
+        resumo.className = 'resumo-import' + (matches.length === 0 ? ' erro' : '');
+        resumo.style.display = 'block';
+        resumo.innerHTML =
+          '✅ ' + matches.length + ' empresa(s) casadas e prontas pra aplicar na grade de ' + competenciaAtual + '.<br>' +
+          (naoEncontrados.length ? '⚠️ ' + naoEncontrados.length + ' não encontradas no cadastro (ex: ' + escapeHtml(naoEncontrados.slice(0, 5).join(', ')) + ').<br>' : '') +
+          (foraDaGrade.length ? '⚠️ ' + foraDaGrade.length + ' encontradas no cadastro mas fora da lista de empresas ativas do mês.<br>' : '') +
+          (invalidos.length ? '⚠️ ' + invalidos.length + ' linha(s) com quantidade inválida, ignoradas.' : '');
+
+        document.getElementById('btn-aplicar-import').disabled = matches.length === 0;
+      });
+    }
+
+    function aplicarImportacaoNaGrade() {
+      if (!resultadoImportacao || resultadoImportacao.length === 0) return;
+      var tipo = document.getElementById('import-tipo').value; // funcionarios | notas
+      resultadoImportacao.forEach(function(m) {
+        var campoId = (tipo === 'funcionarios' ? 'func-' : 'nota-') + m.indiceGrade;
+        var input = document.getElementById(campoId);
+        if (input) {
+          input.value = m.valor;
+          marcarSuja(m.indiceGrade);
+        }
+      });
+      mostrarToast(resultadoImportacao.length + ' empresa(s) preenchidas na grade — revise e clique em "Salvar todas as alterações".');
+      document.getElementById('busca-mensal').value = '';
+      filtrarMensal();
+    }
+
+    // ---------- ABA SINCRONIZAÇÃO (reaproveita as funções do Módulo 7-9 e do Módulo 10) ----------
+    function adicionarLinhaLog(texto, ehErro) {
+      var painel = document.getElementById('log-sincronizacao');
+      var agora = new Date().toLocaleTimeString('pt-BR');
+      var div = document.createElement('div');
+      div.className = 'linha-log' + (ehErro ? ' erro-log' : '');
+      div.textContent = '[' + agora + '] ' + texto;
+      painel.insertBefore(div, painel.firstChild);
+    }
+
+    function traduzirResultado(nomeFuncao, resp) {
+      if (!resp) return nomeFuncao + ' concluído (sem detalhes retornados).';
+      if (resp.ok === false) return '❌ ' + (resp.erro || 'não foi possível concluir.');
+      switch (nomeFuncao) {
+        case 'sincronizarEmpresasTabelao':
+          return '✅ Empresas sincronizadas — novas: ' + resp.novos + ', atualizadas: ' + resp.atualizados + '.';
+        case 'sincronizarFaturamentoMensal':
+          return '✅ Faturamento sincronizado — novos: ' + resp.novos + ', atualizados: ' + resp.atualizados +
+            ', sem CNPJ correspondente: ' + resp.semCorrespondencia + '.';
+        case 'criarAbasAuxiliares':
+          return '✅ Abas auxiliares conferidas/criadas.';
+        case 'calcularScoreEGatilhos':
+          return '✅ Score recalculado — ' + resp.avaliados + ' empresas avaliadas, ' + resp.gravados + ' com gatilho (score ≥ ' + resp.scoreMinimo + ').';
+        case 'enviarAlertasScore':
+        case 'enviarAlertasGatilhos':
+          return '✅ Alertas enviados: ' + (resp.enviados != null ? resp.enviados : '—') + '.';
+        default:
+          return '✅ Concluído.';
+      }
+    }
+
+    function executarAcao(nomeFuncao, botao) {
+      var textoOriginal = botao.textContent;
+      botao.disabled = true;
+      botao.textContent = 'Rodando...';
+      google.script.run
+        .withSuccessHandler(function(resp) {
+          botao.disabled = false;
+          botao.textContent = textoOriginal;
+          var msg = traduzirResultado(nomeFuncao, resp);
+          adicionarLinhaLog(msg, resp && resp.ok === false);
+          mostrarToast(msg, resp && resp.ok === false);
+        })
+        .withFailureHandler(function(erro) {
+          botao.disabled = false;
+          botao.textContent = textoOriginal;
+          adicionarLinhaLog('❌ Erro em ' + nomeFuncao + ': ' + erro.message, true);
+          mostrarToast('Erro: ' + erro.message, true);
+        })[nomeFuncao]();
+    }
+
+    // ---------- inicialização ----------
+    carregarCadastro();
+    carregarCompetencias();
+  </script>
+
+</body>
+</html>
