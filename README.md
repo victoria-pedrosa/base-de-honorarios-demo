@@ -1,6 +1,6 @@
-# Base De Honorarios
+# Demonstração — Score e formulário da base de honorários
 
-> Projeto de portfólio de **Victória Pedrosa** (Automação, Processos e Dados). Automação desenvolvida para um escritório de contabilidade; **esta é uma versão com dados fictícios** — nomes, CNPJs, e-mails e IDs internos foram substituídos.
+> Projeto de portfólio de **Victória Pedrosa**. **Demonstração** de score e formulário da base de honorários — versão com dados fictícios (nomes, CNPJs, e-mails e IDs internos substituídos).
 
 ## Problema de negócio
 O monitor de honorários precisava de score e de um formulário para os dados do piloto.
